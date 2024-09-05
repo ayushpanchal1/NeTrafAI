@@ -1,0 +1,1 @@
+root.iconbitmap("icon.ico")
