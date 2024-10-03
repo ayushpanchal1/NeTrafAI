@@ -1,1 +1,1 @@
-root.iconbitmap("icon.ico")
+stop_event
