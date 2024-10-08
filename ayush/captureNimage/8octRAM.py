@@ -8,13 +8,13 @@ from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtWidgets import QApplication, QWidget, QLabel, QPushButton, QVBoxLayout, QHBoxLayout, QMessageBox, QGridLayout
 from PyQt5.QtGui import QPixmap, QIcon
 from collections import deque, defaultdict
-import os
+# import os
 import matplotlib
 matplotlib.use('Qt5Agg')  # Use Qt5Agg backend for matplotlib
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from PyQt5.QtCore import QByteArray, QBuffer
-from PyQt5.QtGui import QImage
+# from PyQt5.QtGui import QImage
 
 
 class PacketCaptureThread(threading.Thread):
@@ -77,19 +77,40 @@ def convert_packets_to_image(packet_buffer, image_size=(256, 256)):
 
 class MatplotlibCanvas(FigureCanvas):
     def __init__(self, parent=None):
-        self.fig = Figure()
+        self.fig = Figure(facecolor='#2e2e2e')  # Set the figure background to dark
         self.ax = self.fig.add_subplot(111)
         super().__init__(self.fig)
 
+        # Apply dark theme settings
+        self.apply_dark_theme()
+
+    def apply_dark_theme(self):
+        """Applies a dark theme to the plot."""
+        # Set the background color of the plot
+        self.ax.set_facecolor('#2e2e2e')  # Set background to match app theme
+
+        # Set grid, label, tick, and title colors
+        self.ax.tick_params(colors='white')  # Set tick colors
+        self.ax.xaxis.label.set_color('white')  # Set x-axis label color
+        self.ax.yaxis.label.set_color('white')  # Set y-axis label color
+        self.ax.title.set_color('white')  # Set title color
+        self.ax.grid(True, color='gray')  # Set grid color to gray
+
+        # Set spines (axis lines) color to white
+        self.ax.spines['top'].set_color('white')
+        self.ax.spines['bottom'].set_color('white')
+        self.ax.spines['left'].set_color('white')
+        self.ax.spines['right'].set_color('white')
+
     def plot(self, x_data, y_data, title, xlabel, ylabel):
         self.ax.clear()
-        self.ax.plot(x_data, y_data, marker='o')
+        self.apply_dark_theme()  # Apply the dark theme before plotting
+        self.ax.plot(x_data, y_data, marker='o', color='cyan')  # Use a bright color for the plot line
         self.ax.set_title(title)
         self.ax.set_xlabel(xlabel)
         self.ax.set_ylabel(ylabel)
-        self.ax.grid()
+        self.ax.grid(True)
         self.draw()
-
 
 class NetworkCaptureApp(QWidget):
     def __init__(self):
@@ -260,12 +281,30 @@ class NetworkCaptureApp(QWidget):
         if self.packet_counts:
             labels = list(self.packet_counts.keys())
             sizes = list(self.packet_counts.values())
-            print("this is labels:", labels)
-            print("this is sizes:", sizes)
+            
             self.pie_chart_canvas.ax.clear()  # Clear previous pie chart
-            self.pie_chart_canvas.ax.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=90)
-            self.pie_chart_canvas.ax.axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle.
-            self.pie_chart_canvas.ax.set_title('Packet Protocol Distribution')
+
+            # Create the pie chart with white text for labels and percentage
+            wedges, texts, autotexts = self.pie_chart_canvas.ax.pie(
+                sizes, 
+                labels=labels, 
+                autopct='%1.1f%%', 
+                startangle=90,
+                textprops={'color': 'white', 'fontweight': 'bold'}  # Make the label text white and bold
+            )
+            
+            # Set color and bold font for percentage text
+            for autotext in autotexts:
+                autotext.set_color('white')
+                autotext.set_fontsize(10)  # Set font size for percentage text
+                autotext.set_weight('bold')  # Make percentage text bold
+
+            # Set equal aspect ratio to ensure pie is drawn as a circle
+            self.pie_chart_canvas.ax.axis('equal')
+
+            # Set the title color and weight to white and bold
+            self.pie_chart_canvas.ax.set_title('Packet Protocol Distribution', color='white', fontweight='bold')
+            
             self.pie_chart_canvas.draw()  # Update the pie chart
 
 
