@@ -1,5 +1,6 @@
 import sys
 import threading
+import time
 from scapy.all import sniff, Raw, IP, TCP, UDP
 from PIL import Image
 import numpy as np
@@ -10,7 +11,8 @@ from collections import deque, defaultdict
 import os
 import matplotlib
 matplotlib.use('Qt5Agg')  # Use Qt5Agg backend for matplotlib
-import matplotlib.pyplot as plt
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.figure import Figure
 
 
 class PacketCaptureThread(threading.Thread):
@@ -71,6 +73,22 @@ def convert_packets_to_image(packet_buffer, image_size=(256, 256)):
     return image
 
 
+class MatplotlibCanvas(FigureCanvas):
+    def __init__(self, parent=None):
+        self.fig = Figure()
+        self.ax = self.fig.add_subplot(111)
+        super().__init__(self.fig)
+
+    def plot(self, x_data, y_data, title, xlabel, ylabel):
+        self.ax.clear()
+        self.ax.plot(x_data, y_data, marker='o')
+        self.ax.set_title(title)
+        self.ax.set_xlabel(xlabel)
+        self.ax.set_ylabel(ylabel)
+        self.ax.grid()
+        self.draw()
+
+
 class NetworkCaptureApp(QWidget):
     def __init__(self):
         super().__init__()
@@ -80,8 +98,9 @@ class NetworkCaptureApp(QWidget):
         self.packet_info_lock = threading.Lock()
         self.packet_info = {}
         self.packet_counts = defaultdict(int)  # To store packet counts
-        self.packet_times = deque(maxlen=10)  # To store packet counts for averaging
-        self.time_interval = 10  # Time interval for averaging packets
+        self.throughput_times = deque(maxlen=10)  # To store throughput for plotting
+        self.start_time = None  # To track start time for throughput calculation
+        self.time_interval = 1  # Time interval for throughput calculation (in seconds)
 
         self.capture_thread = None
         self.stop_event = threading.Event()
@@ -127,18 +146,14 @@ class NetworkCaptureApp(QWidget):
         self.info_label = QLabel("Packet Info:", self)
         layout.addWidget(self.info_label)
 
-        # Create grid layout for charts
-        chart_layout = QGridLayout()
-        
-        # Create a widget for pie chart
-        self.pie_chart_widget = QLabel("Pie Chart")
-        self.pie_chart_widget.setAlignment(Qt.AlignCenter)
-        chart_layout.addWidget(self.pie_chart_widget, 0, 0)
+        # Create canvas for charts before adding to layout
+        self.line_chart_canvas = MatplotlibCanvas(self)
+        self.pie_chart_canvas = MatplotlibCanvas(self)
 
-        # Create a widget for line chart
-        self.line_chart_widget = QLabel("Line Chart")
-        self.line_chart_widget.setAlignment(Qt.AlignCenter)
-        chart_layout.addWidget(self.line_chart_widget, 0, 1)
+        # Create layout for charts
+        chart_layout = QGridLayout()
+        chart_layout.addWidget(self.pie_chart_canvas, 0, 0)
+        chart_layout.addWidget(self.line_chart_canvas, 0, 1)
 
         layout.addLayout(chart_layout)
 
@@ -159,7 +174,8 @@ class NetworkCaptureApp(QWidget):
             self.packet_buffer.clear()  # Clear buffer when starting a new capture
             self.packet_info.clear()  # Clear packet info
             self.packet_counts.clear()  # Clear packet counts
-            self.packet_times.clear()  # Clear packet times
+            self.throughput_times.clear()  # Clear throughput times
+            self.start_time = None  # Reset start time
             self.capture_thread = PacketCaptureThread(self.packet_buffer, self.stop_event, self.packet_buffer_lock, self.packet_info)
             self.capture_thread.start()
             self.start_button.setEnabled(False)
@@ -202,55 +218,46 @@ class NetworkCaptureApp(QWidget):
                                     f"Destination Port: {self.packet_info.get('dst_port', 'N/A')}")
             self.info_label.setText(f"Packet Info:\n{packet_info_text}")
 
-        # Update packet counts and times for average calculation
-        if self.packet_info:
-            with self.packet_info_lock:
-                protocol = self.packet_info.get('protocol')
-                if protocol:
-                    self.packet_counts[protocol] += 1
-                    self.packet_times.append(len(self.packet_buffer))  # Append current buffer size as a frequency
+        # Calculate throughput
+        current_time = time.time()
+        if self.start_time is None:
+            self.start_time = current_time  # Initialize start time
 
-        # Plot charts
+        elapsed_time = current_time - self.start_time
+        if elapsed_time >= self.time_interval:
+            # Count packets
+            packet_count = len(self.packet_buffer)
+            self.packet_counts['Total Packets'] += packet_count
+            self.throughput = packet_count / elapsed_time  # Calculate throughput (packets/s)
+            self.throughput_times.append(self.throughput)  # Store throughput for plotting
+            self.start_time = current_time  # Reset start time for the next interval
+
+        # Update charts
         self.plot_charts()
 
     def plot_charts(self):
-        """Plot the pie chart and line chart."""
+        self.plot_pie_chart()
+        self.plot_line_chart()
+
+    def plot_line_chart(self):
+        # Prepare data for the line chart
+        x_data = list(range(len(self.throughput_times)))
+        y_data = list(self.throughput_times)
+        self.line_chart_canvas.plot(x_data, y_data, 'Packet Throughput', 'Time Interval (s)', 'Throughput (packets/s)')
+
+    def plot_pie_chart(self):
         if self.packet_counts:
-            plt.figure(1)
-            plt.clf()  # Clear the previous plot
+            labels = list(self.packet_counts.keys())
+            sizes = list(self.packet_counts.values())
+            self.pie_chart_canvas.ax.clear()  # Clear previous pie chart
+            self.pie_chart_canvas.ax.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=90)
+            self.pie_chart_canvas.ax.axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle.
+            self.pie_chart_canvas.ax.set_title('Packet Protocol Distribution')
+            self.pie_chart_canvas.draw()  # Update the pie chart
 
-            # Pie chart
-            plt.subplot(121)  # 1 row, 2 columns, 1st subplot
-            plt.pie(self.packet_counts.values(), labels=self.packet_counts.keys(), autopct='%1.1f%%', startangle=90)
-            plt.title('Packet Protocol Distribution')
-
-            plt.tight_layout()
-            plt.savefig("chart1.png")  # Save the plot to a temporary file
-            plt.close()
-
-                        # Line chart
-            plt.subplot(122)  # 1 row, 2 columns, 2nd subplot
-            if self.packet_times:
-                avg_packets = np.mean(self.packet_times)
-                plt.plot(range(len(self.packet_times)), self.packet_times, label='Packets Received')
-                plt.axhline(y=avg_packets, color='r', linestyle='--', label='Average Packets')
-                plt.title(f'Average Packets: {avg_packets:.2f}')
-                plt.xlabel('Time (last 10 intervals)')
-                plt.ylabel('Packets')
-                plt.legend()
-
-            plt.tight_layout()
-            plt.savefig("chart2.png")  # Save the plot to a temporary file
-            plt.close()
-
-            # Load and set the pie chart
-            self.pie_chart_widget.setPixmap(QPixmap("chart1.png"))
-
-            # Load and set the line chart
-            self.line_chart_widget.setPixmap(QPixmap("chart2.png"))  # Use the same file for both charts, adjust as needed
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
-    ex = NetworkCaptureApp()
-    ex.show()
+    window = NetworkCaptureApp()
+    window.show()
     sys.exit(app.exec_())
