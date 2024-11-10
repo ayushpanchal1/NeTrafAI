@@ -4,6 +4,8 @@ import tensorflow as tf
 import time
 from elasticsearch import Elasticsearch
 from datetime import datetime
+import psutil
+import socket
 
 # -------------------- Configuration -------------------- #
 
@@ -15,13 +17,14 @@ ELASTIC_HOST = 'localhost'
 ELASTIC_PORT = 9200
 CLASSIFICATION_INDEX = "classification-results"
 RAW_PACKET_INDEX = "raw-packet-data"
+PROCESS_INFORMATION_INDEX = "process-info"
 
 # Session management
 SESSION_TIMEOUT = 5  # Seconds
 PACKET_LIMIT_PER_SESSION = 1000  # Prevent excessive memory usage
 
 # Network interface
-NETWORK_INTERFACE = 'wlp1s0'  # Replace with your actual interface
+NETWORK_INTERFACE = 'Ethernet'  # Replace with your actual interface
 
 # -------------------- Initialization -------------------- #
 
@@ -40,6 +43,48 @@ packet_sessions = {}
 
 
 # -------------------- Helper Functions -------------------- #
+
+def get_hostname():
+    """Retrieve the hostname of the machine."""
+    return socket.gethostname()
+
+def get_mac_address(interface_name):
+    """Retrieve the MAC address for the specified network interface."""
+    addrs = psutil.net_if_addrs()
+    if interface_name in addrs:
+        for addr in addrs[interface_name]:
+            if addr.family == psutil.AF_LINK:  # MAC address family
+                return addr.address
+    return None
+
+def get_process_by_port(port):
+    for conn in psutil.net_connections(kind='inet'):
+        if conn.laddr.port == port:
+            pid = conn.pid
+            process = psutil.Process(pid) if pid else None
+            if process:
+                return process.name(), process.exe(), process.pid
+    return None
+
+def send_process_info(session_key, process_info):
+    """Sends process information to Elasticsearch."""
+    process_index = "process-info-index"  # Define your new index for process info
+    event = {
+        "timestamp": datetime.utcnow(),
+        "src_port": session_key[2],
+        "dst_port": session_key[3],
+        "protocol": session_key[4],
+        "process_name": process_info[0],
+        "executable_path": process_info[1],
+        "pid": process_info[2]
+    }
+    
+    try:
+        es.index(index=PROCESS_INFORMATION_INDEX, document=event)
+        # print(f"Process info sent to Elasticsearch: {event}")
+    except Exception as e:
+        print(f"Failed to send process info to Elasticsearch: {e}")
+
 
 def get_session_key(packet):
     """Extracts a unique session key from a packet."""
@@ -65,7 +110,9 @@ def anonymize_packet_for_image(packet):
 
 def send_classification_event(session_key, classification, details, additional_fields=None):
     """Sends classification results to Elasticsearch."""
-    print("src_ip: " + session_key[0] + "  type: " + str(type(session_key[0])))
+    # print("src_ip: " + session_key[0] + "  type: " + str(type(session_key[0])))
+    hostname = get_hostname()
+    mac_address = get_mac_address(NETWORK_INTERFACE)
     event = {
         "timestamp": datetime.utcnow(),
         "session_key": f"{session_key}",
@@ -75,7 +122,9 @@ def send_classification_event(session_key, classification, details, additional_f
         "dst_ip": session_key[1],
         "src_port": session_key[2],
         "dst_port": session_key[3],
-        "protocol": session_key[4]
+        "protocol": session_key[4],
+        "hostname": hostname,
+        "mac_address": mac_address
     }
     if additional_fields:
         event.update(additional_fields)
@@ -83,6 +132,7 @@ def send_classification_event(session_key, classification, details, additional_f
         es.index(index=CLASSIFICATION_INDEX, document=event, pipeline="geoip-pipeline")
         print(f"Classification event sent to Elasticsearch: {event}")
     except Exception as e:
+        print("", end="")
         print(f"Failed to send classification event to Elasticsearch: {e}")
 
 
@@ -103,9 +153,10 @@ def send_raw_packet_event(packet_info):
     }
     try:
         es.index(index=RAW_PACKET_INDEX, document=event, pipeline="geoip-pipeline")
-        print(f"Raw packet data sent to Elasticsearch: Session {event['session_key']}, Packet {event['packet_number']}")
+        # print(f"Raw packet data sent to Elasticsearch: Session {event['session_key']}, Packet {event['packet_number']}")
     except Exception as e:
-        print(f"Failed to send raw packet data to Elasticsearch: {e}")
+        print("", end="")
+        # print(f"Failed to send raw packet data to Elasticsearch: {e}")
 
 
 
@@ -131,7 +182,7 @@ def process_session_packets(session_packets, session_key):
         img_array.append(img_data)
 
     if len(img_array) == 0:
-        print(f"No payload data available for session: {session_key}. Skipping classification.")
+        # print(f"No payload data available for session: {session_key}. Skipping classification.")
         return
 
     # Convert to numpy array
@@ -149,14 +200,24 @@ def process_session_packets(session_packets, session_key):
     average_prediction = float(np.mean(predictions))
 
     # Classification decision
-    if average_prediction > 0.5:
+    if average_prediction > 0.8:
         nor_count += 1
         classification = "Normal"
-        print(f"Normal traffic detected for session: {session_key}.")
+        # print(f"Normal traffic detected for session: {session_key}.")
     else:
         mal_count += 1
         classification = "Malicious (Neris)"
-        print(f"Malicious (Neris) traffic detected for session: {session_key}!")
+        # print(f"Malicious (Neris) traffic detected for session: {session_key}!")
+
+        src_port = session_key[2]  # Extract the source port from session_key tuple
+        process_info = get_process_by_port(src_port)
+        
+        if process_info:
+            process_name, executable_path, pid = process_info
+            print(f"Process Name: {process_name}, Executable Path: {executable_path}, PID: {pid}")
+            send_process_info(session_key, process_info)
+        else:
+            print("No process found associated with this port.")
 
     print(f"Normal: {nor_count}, Malicious: {mal_count}")
 
@@ -217,7 +278,7 @@ def process_packet(packet):
 
         # Enforce packet limit per session to prevent memory issues
         if packet_sessions[session_key]['packet_count'] >= PACKET_LIMIT_PER_SESSION:
-            print(f"Packet limit reached for session: {session_key}. Processing session...")
+            # print(f"Packet limit reached for session: {session_key}. Processing session...")
             process_session_packets(packet_sessions[session_key]['packets'], session_key)
             del packet_sessions[session_key]
             return
@@ -228,7 +289,7 @@ def process_packet(packet):
             session_data = packet_sessions[key]
             if current_time - session_data['last_time'] > SESSION_TIMEOUT:
                 # Process and classify session
-                print(f"Session timed out: {key}. Processing session...")
+                # print(f"Session timed out: {key}. Processing session...")
                 process_session_packets(session_data['packets'], key)
                 del packet_sessions[key]
 
