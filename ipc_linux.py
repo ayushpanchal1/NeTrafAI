@@ -15,6 +15,8 @@ nor_count = 0
 SESSION_TIMEOUT = 5  # Seconds to wait before considering session complete
 packet_sessions = {}  # Dictionary to hold ongoing sessions
 
+NETWORK_INTERFACE = "wlp1s0"
+
 # Function to extract the session key from a packet
 def get_session_key(packet):
     src = packet[IP].src
@@ -141,5 +143,4 @@ def capture_packets(interface):
     print(f"Packet capture on interface {interface} stopped.")
 
 if __name__ == "__main__":
-    # capture_packets("wlp1s0")
-    capture_packets("WiFi")
+    capture_packets(NETWORK_INTERFACE)
