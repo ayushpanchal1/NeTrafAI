@@ -8,7 +8,8 @@ from datetime import datetime
 ELASTIC_HOST = 'localhost'
 ELASTIC_PORT = 9200
 DNS_INDEX = "dns-queries"
-NETWORK_INTERFACE = 'wlp1s0'
+# NETWORK_INTERFACE = 'wlp1s0'
+NETWORK_INTERFACE = 'WiFi'
 
 # Initialize Elasticsearch
 es = Elasticsearch([{'host': ELASTIC_HOST, 'port': ELASTIC_PORT, 'scheme': 'http'}])

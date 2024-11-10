@@ -3,6 +3,7 @@ import numpy as np
 import tensorflow as tf
 import time
 import socket
+import json
 
 # Load your trained model
 model = tf.keras.models.load_model("./models/cnn_model_20241006-223656.keras")
@@ -84,14 +85,27 @@ def process_session_packets(session_packets, session_key):
         for prediction in predictions:
             if prediction > 0.5:
                 nor_count += 1
-                message = (f"Normal traffic detected for session: {session_key}.\n"
-                           f"Normal: {nor_count}, Malicious: {mal_count}")
+                message = {
+                    "type": "normal",
+                    "session_key": session_key,
+                    "nor_count": nor_count,
+                    "mal_count": mal_count,
+                    "text": f"Normal traffic detected for session: {session_key}."
+                }
             else:
                 mal_count += 1
-                message = (f"Malicious (Neris) traffic detected for session: {session_key}!\n")
-                # Send only the malicious message to the GUI
-                send_message(message)
-            print(f"Message to be sent: {message}")
+                message = {
+                    "type": "malicious",
+                    "session_key": session_key,
+                    "nor_count": nor_count,
+                    "mal_count": mal_count,
+                    "text": f"Malicious (Neris) traffic detected for session: {session_key}!"
+                }
+
+            # Convert message to JSON and send
+            message_json = json.dumps(message)
+            send_message(message_json)
+            print(f"Message to be sent: {message_json}")
 
 # Function to process packets and maintain sessions
 def process_packet(packet):
