@@ -1,0 +1,11 @@
+scapy
+pillow
+numpy
+pyqt5
+matplotlib
+fpdf
+tensorflow
+win10toast
+tldextract
+elasticsearch
+psutil
