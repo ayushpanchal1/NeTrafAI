@@ -5,10 +5,10 @@ from datetime import datetime
 
 # -------------------- Configuration -------------------- #
 
-ELASTIC_HOST = 'localhost'
+ELASTIC_HOST = '192.168.0.106'
 ELASTIC_PORT = 9200
 DNS_INDEX = "dns-queries"
-NETWORK_INTERFACE = 'wlp1s0'
+NETWORK_INTERFACE = 'Ethernet'
 
 # Initialize Elasticsearch
 es = Elasticsearch([{'host': ELASTIC_HOST, 'port': ELASTIC_PORT, 'scheme': 'http'}])

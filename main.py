@@ -13,7 +13,7 @@ import socket
 MODEL_PATH = "./models/cnn_model_20241006-223656.keras"
 
 # Elasticsearch configuration
-ELASTIC_HOST = 'localhost'
+ELASTIC_HOST = '192.168.0.106'
 ELASTIC_PORT = 9200
 CLASSIFICATION_INDEX = "classification-results"
 RAW_PACKET_INDEX = "raw-packet-data"
@@ -25,6 +25,9 @@ PACKET_LIMIT_PER_SESSION = 1000  # Prevent excessive memory usage
 
 # Network interface
 NETWORK_INTERFACE = 'Ethernet'  # Replace with your actual interface
+
+SENSITIVITY = 0.8
+
 
 # -------------------- Initialization -------------------- #
 
@@ -200,7 +203,7 @@ def process_session_packets(session_packets, session_key):
     average_prediction = float(np.mean(predictions))
 
     # Classification decision
-    if average_prediction > 0.8:
+    if average_prediction > SENSITIVITY:
         nor_count += 1
         classification = "Normal"
         # print(f"Normal traffic detected for session: {session_key}.")

@@ -6,6 +6,8 @@ import socket
 import json
 from win10toast import ToastNotifier
 
+NETWORK_INTERFACE = 'Ethernet'
+
 # Notifications
 toaster = ToastNotifier()
 malicious_session_counts = {}  # session_key_str: (count, notification_sent)
@@ -160,4 +162,4 @@ def capture_packets(interface):
 
 if __name__ == "__main__":
     # capture_packets("wlp1s0")
-    capture_packets("Ethernet")
+    capture_packets(NETWORK_INTERFACE)
