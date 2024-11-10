@@ -22,7 +22,7 @@ from PyQt5.QtCore import QByteArray, QBuffer
 # from reportlab.lib.pagesizes import letter
 from fpdf import FPDF
 import json
-
+import re
 class PacketCaptureThread(threading.Thread):
     def __init__(self, packet_buffer, stop_event, packet_buffer_lock, packet_info, max_packets=1000):
         super().__init__()
@@ -120,10 +120,10 @@ class MatplotlibCanvas(FigureCanvas):
 
 
 class NetworkCaptureApp(QWidget):
-    global nor_count
-    global mal_count
-    nor_count = 0
-    mal_count = 0
+    # global nor_count
+    # global mal_count
+    # nor_count = 0
+    # mal_count = 0
 
     def __init__(self):
         super().__init__()
@@ -136,6 +136,9 @@ class NetworkCaptureApp(QWidget):
         self.throughput_times = deque(maxlen=10)  # To store throughput for plotting
         self.start_time = None  # To track start time for throughput calculation
         self.time_interval = 1  # Time interval for throughput calculation (in seconds)
+        self.mal_count = 0
+        self.nor_count = 0
+        self.global_network_log = []
 
         self.capture_thread = None
         self.stop_event = threading.Event()
@@ -285,8 +288,49 @@ class NetworkCaptureApp(QWidget):
         pdf.cell(200, 10, txt=f"Normal Events: {self.nor_count}", ln=True, align='L')
         pdf.cell(200, 10, txt=f"Malicious Events: {self.mal_count}", ln=True, align='L')
         
+ # Add a line break before logs
+        pdf.ln(10)
+        
+        # Set subtitle for network classification logs
+        pdf.set_font('Arial', 'B', 12)
+        pdf.cell(200, 10, txt="Network Classification Log", ln=True, align='L')
+        
+        # Prepare table header with adjusted column widths
+        pdf.set_font('Arial', 'B', 10)
+        pdf.cell(35, 10, 'Type', border=1, align='C')           # Adjusted width
+        pdf.cell(40, 10, 'Source', border=1, align='C')          # Adjusted width
+        pdf.cell(40, 10, 'Destination', border=1, align='C')     # Adjusted width
+        pdf.cell(35, 10, 'Source Port', border=1, align='C')     # Adjusted width
+        pdf.cell(35, 10, 'Destination Port', border=1, align='C') # Adjusted width
+        pdf.ln(10)  # Line break after header
+        
+        # Set font for table rows
+        pdf.set_font('Arial', '', 10)
+        
+        # Regular expression to parse the log messages
+        log_pattern = re.compile(r"(Normal|Malicious.*) traffic detected for session: \((.*?), (.*?), (\d+), (\d+), \d+\)")
+
+        # Add each log message as a table row
+        for log_message in self.global_network_log:
+            match = log_pattern.search(log_message)
+            if match:
+                traffic_type = match.group(1)  # 'Normal' or 'Malicious (Neris)'
+                source = match.group(2)
+                destination = match.group(3)
+                source_port = match.group(4)
+                destination_port = match.group(5)
+                
+                # Add table row
+                pdf.cell(35, 10, traffic_type, border=1, align='C')          # Adjusted width
+                pdf.cell(40, 10, source, border=1, align='C')                 # Adjusted width
+                pdf.cell(40, 10, destination, border=1, align='C')            # Adjusted width
+                pdf.cell(35, 10, source_port, border=1, align='C')            # Adjusted width
+                pdf.cell(35, 10, destination_port, border=1, align='C')       # Adjusted width
+                pdf.ln(10)  # Line break after each row
+        
         # Output the PDF to a file
         pdf.output("report.pdf")
+        print("PDF Report Generated: report.pdf")
 
     # def socket_server(self):
     #     """A simple socket server to receive prediction results from malware_detection.py."""
@@ -340,6 +384,8 @@ class NetworkCaptureApp(QWidget):
                             text_message = message.get("text", "")
                             print(f"Received message: {text_message}")
                             print(f"Malicious Count: {mal_count}, Normal Count: {nor_count}")
+
+                            self.global_network_log.append(text_message)
 
                             # Update the prediction_output text box
                             self.append_prediction(text_message)
